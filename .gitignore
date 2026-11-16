@@ -1,0 +1,9 @@
+target/
+dist/
+*.bak
+*.log
+*.tmp
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
