@@ -1,10 +1,40 @@
 use crate::theme::{card_frame, draw_breed_portrait, hero_header, palette, pill_badge, stat_bar};
-use egui::{Color32, RichText, ScrollArea, Ui};
+use egui::{Color32, ColorImage, RichText, ScrollArea, TextureHandle, TextureOptions, Ui};
 use puppycraft_core::encyclopedia::{all_breeds, match_breeds};
 use puppycraft_core::knowledge::{
     breeder_red_flags, breeders, rescue_foreign_checklist, rescue_orgs,
 };
 use puppycraft_core::models::{Breed, DogSize, LivingType, MatchProfile};
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+fn load_breed_texture(ctx: &egui::Context, breed_id: &str, suffix: &str) -> Option<TextureHandle> {
+    let fname = format!("{breed_id}_{suffix}.jpg");
+    let mut candidates = vec![
+        PathBuf::from("assets/breeds").join(&fname),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/breeds")
+            .join(&fname),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("assets/breeds").join(&fname));
+        }
+    }
+    for path in candidates {
+        if let Ok(img) = image::open(&path) {
+            let rgba = img.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            let color = ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+            return Some(ctx.load_texture(
+                format!("puppy_{breed_id}_{suffix}"),
+                color,
+                TextureOptions::LINEAR,
+            ));
+        }
+    }
+    None
+}
 
 pub struct AdvisorState {
     pub profile: MatchProfile,
@@ -14,6 +44,7 @@ pub struct AdvisorState {
     pub compare_a: String,
     pub compare_b: String,
     pub show_rescue_tab: bool,
+    pub portrait_cache: HashMap<String, (Option<TextureHandle>, Option<TextureHandle>)>,
 }
 
 impl Default for AdvisorState {
@@ -26,6 +57,7 @@ impl Default for AdvisorState {
             compare_a: "golden-retriever".into(),
             compare_b: "cavalier-king-charles".into(),
             show_rescue_tab: false,
+            portrait_cache: HashMap::new(),
         }
     }
 }
@@ -320,9 +352,46 @@ pub fn ui_encyclopedia(ui: &mut Ui, st: &mut AdvisorState) {
                             .color(pal.text_muted),
                         );
                         ui.add_space(6.0);
+                        let (pup_tex, adu_tex) = st
+                            .portrait_cache
+                            .entry(b.id.clone())
+                            .or_insert_with(|| {
+                                let ctx = ui.ctx();
+                                (
+                                    load_breed_texture(ctx, &b.id, "puppy"),
+                                    load_breed_texture(ctx, &b.id, "adult"),
+                                )
+                            })
+                            .clone();
                         ui.horizontal(|ui| {
-                            draw_breed_portrait(ui, dark, &b.id, true);
-                            draw_breed_portrait(ui, dark, &b.id, false);
+                            if let Some(tex) = pup_tex {
+                                card_frame(ui, dark).show(ui, |ui| {
+                                    ui.vertical_centered(|ui| {
+                                        ui.add(
+                                            egui::Image::new((tex.id(), egui::vec2(148.0, 112.0)))
+                                                .maintain_aspect_ratio(true)
+                                                .fit_to_exact_size(egui::vec2(148.0, 112.0)),
+                                        );
+                                        ui.label(RichText::new("Welpe").small().weak());
+                                    });
+                                });
+                            } else {
+                                draw_breed_portrait(ui, dark, &b.id, true);
+                            }
+                            if let Some(tex) = adu_tex {
+                                card_frame(ui, dark).show(ui, |ui| {
+                                    ui.vertical_centered(|ui| {
+                                        ui.add(
+                                            egui::Image::new((tex.id(), egui::vec2(148.0, 112.0)))
+                                                .maintain_aspect_ratio(true)
+                                                .fit_to_exact_size(egui::vec2(148.0, 112.0)),
+                                        );
+                                        ui.label(RichText::new("Erwachsen").small().weak());
+                                    });
+                                });
+                            } else {
+                                draw_breed_portrait(ui, dark, &b.id, false);
+                            }
                         });
                         ui.add_space(6.0);
                         ui.horizontal_wrapped(|ui| {
